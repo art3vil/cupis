@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 import requests
 
 # === Настройки ===
-TOKEN = "8227735572:AAE8flxfp77FfHjn_qdSS09oE_Iuu2zcdDk"  # ← ВСТАВЬ СВОЙ
+TOKEN = ""  # ← ВСТАВЬ СВОЙ
 ADMIN_ID = 123456789  # ← ВСТАВЬ ID АДМИНА
 WEBAPP_URL = "https://art3vil.github.io/cupis/" # ← ТВОЯ ССЫЛКА
 
